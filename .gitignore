@@ -8,6 +8,7 @@ venv/
 build/
 develop-eggs/
 dist/
+uploads/
 downloads/
 eggs/
 .eggs/
