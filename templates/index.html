@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<title>Simple Image Resizer & Filter</title>
+	<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+	<h1>Image Resizer & Filter</h1>
+
+	{% with messages = get_flashed_messages() %}
+	  {% if messages %}
+		<ul class=flashes>
+		{% for message in messages %}
+		  <li>{{ message }}</li>
+		{% endfor %}
+		</ul>
+	  {% endif %}
+	{% endwith %}
+
+
+	<form action="{{ url_for('process_image') }}" method="post" enctype="multipart/form-data" id="image-form">
+		<div class="form-group">
+			<label for="file">Choose Image:</label>
+			<input type="file" id="file" name="file" accept="image/png, image/jpeg, image/gif" required>
+		</div>
+
+		<fieldset>
+			<legend>Resize Options</legend>
+			<div class="form-group">
+				<input type="radio" id="resize_width" name="resize_option" value="width" checked>
+				<label for="resize_width">Resize by Width:</label>
+				<input type="number" id="width" name="width" placeholder="e.g., 800" min="1"> px
+			</div>
+			<div class="form-group">
+				<input type="radio" id="resize_percent" name="resize_option" value="percent">
+				<label for="resize_percent">Resize by Percentage:</label>
+				<input type="number" id="percentage" name="percentage" value="100" min="1" max="500"> %
+			</div>
+			 <div class="form-group">
+				<input type="radio" id="resize_none" name="resize_option" value="none">
+				<label for="resize_none">Keep Original Size</label>
+			</div>
+		</fieldset>
+
+		<fieldset>
+			<legend>Filter Options</legend>
+			<div class="form-group">
+				<input type="checkbox" id="grayscale" name="grayscale" value="true">
+				<label for="grayscale">Grayscale</label>
+			</div>
+			 <div class="form-group">
+				<input type="checkbox" id="sepia" name="sepia" value="true">
+				<label for="sepia">Sepia</label>
+			</div>
+		</fieldset>
+
+		 <fieldset>
+			<legend>Output Format</legend>
+			 <div class="form-group">
+				<label for="format">Format:</label>
+				<select id="format" name="format">
+					<option value="JPEG" selected>JPEG</option>
+					<option value="PNG">PNG</option>
+					<option value="GIF">GIF</option>
+				</select>
+			 </div>
+		</fieldset>
+
+		<button type="submit">Process Image</button>
+	</form>
+
+	</body>
+</html>
