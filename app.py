@@ -1,3 +1,8 @@
+import sys
+print("Python version:", sys.version)
+print("Current working directory:", os.getcwd())
+print("Static folder exists:", os.path.exists("static"))
+print("Templates folder exists:", os.path.exists("templates"))
 import os
 import io
 import uuid
