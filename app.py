@@ -1,9 +1,9 @@
 import sys
+import os
 print("Python version:", sys.version)
 print("Current working directory:", os.getcwd())
 print("Static folder exists:", os.path.exists("static"))
 print("Templates folder exists:", os.path.exists("templates"))
-import os
 import io
 import uuid
 from flask import Flask, request, render_template, send_file, flash, redirect, url_for
