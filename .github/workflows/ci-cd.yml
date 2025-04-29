@@ -1,0 +1,76 @@
+name: Python App CI/CD (EC2)
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  build_and_test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.10"]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
+        pip install webdriver-manager
+
+    - name: Run Unit and Integration Tests with Coverage
+      run: |
+        python -m pytest --cov=app tests/test_app.py --cov-report=xml
+
+    # Setup for Selenium tests
+    - name: Install Google Chrome
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y google-chrome-stable xvfb
+
+    - name: Run Selenium E2E Tests
+      run: |
+        python -m pytest tests/test_selenium.py
+
+  deploy_to_ec2:
+    needs: build_and_test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Deploy to EC2 via SSH
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.EC2_HOST_IP }}
+        username: ubuntu
+        key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
+        script: |
+          echo "Starting deployment to EC2..."
+          cd /home/ubuntu/ImageProcessorApp
+          echo "Pulling latest code..."
+          git fetch origin main
+          git reset --hard origin/main
+          echo "Activating virtual environment..."
+          source venv/bin/activate
+          echo "Installing/updating dependencies..."
+          pip install -r requirements.txt
+          echo "Running unit tests to verify functionality..."
+          python -m pytest tests/test_app.py
+          echo "Restarting application service..."
+          sudo systemctl restart imageprocessor
+          echo "Deployment to EC2 complete!"
