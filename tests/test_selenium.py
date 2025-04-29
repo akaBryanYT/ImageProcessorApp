@@ -32,7 +32,8 @@ def chrome_driver():
     """Setup Selenium WebDriver."""
     chrome_options = ChromeOptions()
     # Uncomment the next line if you want to run headless (without browser UI)
-    # chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox") # Often needed in CI environments
     chrome_options.add_argument("--disable-dev-shm-usage") # Often needed in CI environments
     chrome_options.add_argument("--window-size=1920,1080") # Standard window size
