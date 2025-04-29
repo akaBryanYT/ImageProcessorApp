@@ -1,172 +1,175 @@
 import os
+import io
+import uuid
 from flask import Flask, request, render_template, send_file, flash, redirect, url_for
 from PIL import Image, ImageOps, UnidentifiedImageError
-import io
-import uuid # To generate unique filenames for safety
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Flask setup
+# ──────────────────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-# Secret key is needed for flashing messages
-app.config['SECRET_KEY'] = os.environ.get('FLASK_SECRET_KEY', 'a-default-very-secret-key')
-# Optional: configure upload folder and allowed extensions
-# UPLOAD_FOLDER = 'uploads'
-# app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+app.config["SECRET_KEY"] = os.environ.get("FLASK_SECRET_KEY", "a-default-very-secret-key")
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
 
-@app.route('/', methods=['GET'])
+
+def allowed_file(filename: str) -> bool:
+    """Return True if the filename extension is one we accept."""
+    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Routes
+# ──────────────────────────────────────────────────────────────────────────────
+@app.route("/", methods=["GET"])
 def index():
-    """Renders the main page."""
-    return render_template('index.html')
+    """Render the upload/processing form."""
+    return render_template("index.html")
 
-@app.route('/process', methods=['POST'])
+
+@app.route("/process", methods=["POST"])
 def process_image():
-    """Handles image upload, processing, and returns the modified image."""
-    if 'file' not in request.files:
-        flash('No file part')
-        return redirect(url_for('index'))
+    """Handle an upload, perform processing, and stream the result back."""
+    # ---------- File sanity checks ----------
+    if "file" not in request.files:
+        flash("No file part")
+        return redirect(url_for("index"))
 
-    file = request.files['file']
+    file = request.files["file"]
 
-    if file.filename == '':
-        flash('No selected file')
-        return redirect(url_for('index'))
+    if file.filename == "":
+        flash("No selected file")
+        return redirect(url_for("index"))
 
-    if not file or not allowed_file(file.filename):
-         flash('Invalid file type. Allowed types: png, jpg, jpeg, gif')
-         return redirect(url_for('index'))
+    if not allowed_file(file.filename):
+        flash("Invalid file type. Allowed types: png, jpg, jpeg, gif")
+        return redirect(url_for("index"))
 
-    # Get processing options from the form
+    # ---------- Pull form controls ----------
     try:
-        # Use get with default values for robustness
-        target_width = request.form.get('width', type=int) # Expect integer width
-        resize_option = request.form.get('resize_option', 'width') # 'width', 'percent', 'none'
-        percentage = request.form.get('percentage', 100, type=int) # Default to 100% if not provided
-        apply_grayscale = 'grayscale' in request.form
-        apply_sepia = 'sepia' in request.form # Example filter
-        output_format = request.form.get('format', 'JPEG').upper() # Default to JPEG
+        target_width = request.form.get("width", type=int)
+        resize_option = request.form.get("resize_option", "width")  # width • percent • none
+        percentage = request.form.get("percentage", 100, type=int)
+        apply_grayscale = "grayscale" in request.form
+        apply_sepia = "sepia" in request.form
+        output_format = request.form.get("format", "JPEG").upper()
+        if output_format not in {"JPEG", "PNG", "GIF"}:
+            output_format = "JPEG"
+    except ValueError:  # never really triggered but kept as guard-rail
+        flash("Invalid input for dimensions or percentage.")
+        return redirect(url_for("index"))
 
-        if output_format not in ['JPEG', 'PNG', 'GIF']:
-            output_format = 'JPEG' # Fallback to default if invalid format provided
+    # ---------- Validate width / percent ----------
+    if resize_option == "width":
+        if target_width is None or target_width <= 0:
+            flash("Invalid input for dimensions")
+            return redirect(url_for("index"))
 
-    except ValueError:
-         flash('Invalid input for dimensions or percentage.')
-         return redirect(url_for('index'))
+    if resize_option == "percent":
+        if percentage is None or percentage <= 0:
+            flash(
+                "Percentage resulted in zero or negative image dimension, original size kept."
+            )
+            resize_option = "none"  # fall back to original size
 
+    # ---------- Perform processing ----------
     try:
         img = Image.open(file.stream)
-        original_format = img.format # Store original format if needed later
+        processed_img = process_image_data(
+            img,
+            resize_option=resize_option,
+            target_width=target_width,
+            percentage=percentage,
+            apply_grayscale=apply_grayscale,
+            apply_sepia=apply_sepia,
+        )
 
-        # --- Image Processing Logic ---
-        processed_img = process_image_data(img, resize_option, target_width, percentage, apply_grayscale, apply_sepia)
-
-        # --- Prepare file for sending ---
+        # ---------- Stream the file back ----------
         img_io = io.BytesIO()
-        # Determine save format and parameters
-        save_kwargs = {}
-        if output_format == 'JPEG':
-            # Ensure image mode is compatible with JPEG (e.g., convert RGBA to RGB)
-            if processed_img.mode == 'RGBA' or processed_img.mode == 'P': # P is palette mode (like GIF)
-                processed_img = processed_img.convert('RGB')
-            save_kwargs['format'] = 'JPEG'
-            save_kwargs['quality'] = 90 # Set JPEG quality
-        elif output_format == 'PNG':
-             save_kwargs['format'] = 'PNG'
-        elif output_format == 'GIF':
-             save_kwargs['format'] = 'GIF'
-             # GIF saving might have specific options if needed
-        else: # Fallback just in case
-             processed_img = processed_img.convert('RGB') # Convert to RGB for safety
-             save_kwargs['format'] = 'JPEG'
+        save_kwargs = {"format": output_format}
+        if output_format == "JPEG":
+            # JPEG must be RGB
+            if processed_img.mode in {"RGBA", "P"}:
+                processed_img = processed_img.convert("RGB")
+            save_kwargs["quality"] = 90
 
         processed_img.save(img_io, **save_kwargs)
         img_io.seek(0)
 
-        # Generate a safe filename
-        original_filename, original_extension = os.path.splitext(file.filename)
-        safe_filename = f"{original_filename}_{uuid.uuid4().hex[:8]}.{output_format.lower()}"
+        original_stem, _ = os.path.splitext(file.filename)
+        safe_name = f"{original_stem}_{uuid.uuid4().hex[:8]}.{output_format.lower()}"
 
         return send_file(
             img_io,
-            mimetype=f'image/{output_format.lower()}',
-            as_attachment=True, # Force download
-            download_name=safe_filename # Suggest a filename
+            mimetype=f"image/{output_format.lower()}",
+            as_attachment=True,
+            download_name=safe_name,
         )
 
     except UnidentifiedImageError:
-        flash('Cannot identify image file. It might be corrupted or an unsupported format.')
-        return redirect(url_for('index'))
-    except Exception as e:
-        app.logger.error(f"Error processing image: {e}", exc_info=True) # Log the error
-        flash(f'An error occurred during processing: {e}')
-        return redirect(url_for('index'))
+        flash("Cannot identify image file. It might be corrupted or an unsupported format.")
+        return redirect(url_for("index"))
+    except Exception as exc:
+        app.logger.error("Error processing image", exc_info=True)
+        flash(f"An error occurred during processing: {exc}")
+        return redirect(url_for("index"))
 
-# --- Refactored Image Processing Logic ---
-def process_image_data(img, resize_option, target_width, percentage, apply_grayscale, apply_sepia):
-    """Applies resizing and filters to the PIL Image object."""
-    processed_img = img.copy() # Work on a copy
 
-    # --- Resizing ---
-    original_width, original_height = processed_img.size
-    new_width, new_height = original_width, original_height
+# ──────────────────────────────────────────────────────────────────────────────
+# Pure-function image operations
+# ──────────────────────────────────────────────────────────────────────────────
+def process_image_data(
+    img: Image.Image,
+    resize_option: str,
+    target_width: int | None,
+    percentage: int,
+    apply_grayscale: bool,
+    apply_sepia: bool,
+) -> Image.Image:
+    """Resize and/or filter *img* according to the supplied options."""
+    processed = img.copy()
 
-    if resize_option == 'width' and target_width is not None and target_width > 0:
-        if original_width != target_width: # Only resize if different
-            aspect_ratio = original_height / original_width
-            new_width = target_width
-            new_height = int(new_width * aspect_ratio)
-            processed_img = processed_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-    elif resize_option == 'percent' and percentage is not None and 0 < percentage <= 500: # Added upper limit
-        if percentage != 100: # Only resize if not 100%
-            scale = percentage / 100.0
-            new_width = int(original_width * scale)
-            new_height = int(original_height * scale)
-            if new_width > 0 and new_height > 0: # Ensure dimensions are valid
-                processed_img = processed_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            else:
-                # Handle edge case of scaling down too much, maybe keep original size or flash error
-                flash('Percentage resulted in zero or negative image dimension, original size kept.') # Inform user
+    # ----- resizing -----
+    ow, oh = processed.size
+    if resize_option == "width" and target_width and target_width > 0 and ow != target_width:
+        aspect = oh / ow
+        new_size = (target_width, int(target_width * aspect))
+        processed = processed.resize(new_size, Image.Resampling.LANCZOS)
 
-    # --- Filtering ---
+    elif resize_option == "percent" and percentage > 0 and percentage != 100:
+        scale = percentage / 100.0
+        nw = max(1, int(ow * scale))
+        nh = max(1, int(oh * scale))
+        processed = processed.resize((nw, nh), Image.Resampling.LANCZOS)
+
+    # ----- filters -----
     if apply_grayscale:
-        # Convert to grayscale. 'L' mode is luminance (grayscale).
-        processed_img = ImageOps.grayscale(processed_img)
-        # Grayscale might remove alpha channel, need conversion back if PNG output needed with transparency later
-        # However, grayscale itself doesn't have transparency. If original had alpha, it's lost here.
-
+        processed = ImageOps.grayscale(processed)
     if apply_sepia:
-        processed_img = apply_sepia_filter(processed_img) # Apply sepia filter
+        processed = apply_sepia_filter(processed)
 
-    return processed_img
+    return processed
 
-def apply_sepia_filter(img):
-    """Applies a sepia filter to a PIL Image."""
-    # Ensure image is in RGB mode for sepia calculation
-    if img.mode != 'RGB':
-        img = img.convert('RGB')
 
-    width, height = img.size
-    pixels = img.load() # Create the pixel map
+def apply_sepia_filter(img: Image.Image) -> Image.Image:
+    """Return *img* with a naïve sepia tone applied."""
+    if img.mode != "RGB":
+        img = img.convert("RGB")
 
-    for py in range(height):
-        for px in range(width):
-            r, g, b = img.getpixel((px, py))
-
-            tr = int(0.393 * r + 0.769 * g + 0.189 * b)
-            tg = int(0.349 * r + 0.686 * g + 0.168 * b)
-            tb = int(0.272 * r + 0.534 * g + 0.131 * b)
-
-            # Clamp values to 0-255
-            tr = min(255, tr)
-            tg = min(255, tg)
-            tb = min(255, tb)
-
-            pixels[px, py] = (tr, tg, tb)
+    px = img.load()
+    for y in range(img.height):
+        for x in range(img.width):
+            r, g, b = px[x, y]
+            tr = min(255, int(0.393 * r + 0.769 * g + 0.189 * b))
+            tg = min(255, int(0.349 * r + 0.686 * g + 0.168 * b))
+            tb = min(255, int(0.272 * r + 0.534 * g + 0.131 * b))
+            px[x, y] = (tr, tg, tb)
     return img
 
-if __name__ == '__main__':
-    # Use 0.0.0.0 to be accessible externally if needed (e.g., within Docker)
-    # Debug=True enables auto-reloading and provides debugger (DO NOT use in production)
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Dev server
+# ──────────────────────────────────────────────────────────────────────────────
+if __name__ == "__main__":
+    # DO NOT enable debug=True in production.
+    app.run(host="0.0.0.0", port=5000, debug=True)

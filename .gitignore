@@ -43,12 +43,14 @@ coverage.xml
 .DS_Store
 /instance # Flask instance folder
 .env* # Environment variable files
+.pytest_cache/
 
 # Selenium / WebDriver related
 geckodriver.log
 chromedriver.log
 iedriver.log
 Edgedriver.log
+/selenium_downloads/
 
 # AWS specific
 .aws/
