@@ -165,7 +165,12 @@ def apply_sepia_filter(img: Image.Image) -> Image.Image:
     for y in range(img.height):
         for x in range(img.width):
             r, g, b = px[x, y]
-            tr = min(255, int(0.393 * r + 0.769 * g + 0.189 * b))
+            # tr = min(255, int(0.393 * r + 0.769 * g + 0.189 * b))
+            # tg = min(255, int(0.349 * r + 0.686 * g + 0.168 * b))
+            # tb = min(255, int(0.272 * r + 0.534 * g + 0.131 * b))
+            
+            # Slightly warmer sepia tone by increasing red component
+            tr = min(255, int(0.423 * r + 0.769 * g + 0.189 * b))
             tg = min(255, int(0.349 * r + 0.686 * g + 0.168 * b))
             tb = min(255, int(0.272 * r + 0.534 * g + 0.131 * b))
             px[x, y] = (tr, tg, tb)
@@ -176,5 +181,4 @@ def apply_sepia_filter(img: Image.Image) -> Image.Image:
 # Dev server
 # ──────────────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    # DO NOT enable debug=True in production.
     app.run(host="0.0.0.0", port=5000, debug=True)
